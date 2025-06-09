@@ -6,9 +6,17 @@ import { CartModule } from './cart/cart.module';
 import { AuthModule } from './auth/auth.module';
 import { OrderModule } from './order/order.module';
 import { ConfigModule } from '@nestjs/config';
+import { TypeOrmModule } from '@nestjs/typeorm';
+import { dbConnection } from './db.connection';
 
 @Module({
-  imports: [AuthModule, CartModule, OrderModule, ConfigModule.forRoot()],
+  imports: [
+    AuthModule,
+    CartModule,
+    OrderModule,
+    ConfigModule.forRoot(),
+    TypeOrmModule.forRoot(dbConnection),
+  ],
   controllers: [AppController],
   providers: [],
 })
