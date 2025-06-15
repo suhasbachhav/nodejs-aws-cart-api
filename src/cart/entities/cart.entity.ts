@@ -19,17 +19,25 @@ export class Cart {
   id: string;
 
   @Column({ type: 'uuid', nullable: false })
-  user_id: string;
+  userId: string;
 
-  @CreateDateColumn({ type: 'timestamp' })
-  created_at: Date;
-
-  @UpdateDateColumn({ type: 'timestamp' })
-  updated_at: Date;
-
-  @Column({ type: 'enum', enum: CartStatus })
+  @Column({
+    type: 'enum',
+    enum: CartStatus,
+    default: CartStatus.OPEN,
+  })
   status: CartStatus;
 
   @OneToMany(() => CartItem, (cartItem) => cartItem.cart, { cascade: true })
   items: CartItem[];
+
+  @CreateDateColumn({ type: 'timestamp', default: () => 'CURRENT_TIMESTAMP' })
+  created_at: Date;
+
+  @UpdateDateColumn({
+    type: 'timestamp',
+    default: () => 'CURRENT_TIMESTAMP',
+    onUpdate: 'CURRENT_TIMESTAMP',
+  })
+  updated_at: Date;
 }

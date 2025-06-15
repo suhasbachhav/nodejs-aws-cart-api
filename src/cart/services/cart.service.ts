@@ -1,35 +1,39 @@
 import { Injectable } from '@nestjs/common';
-import { randomUUID } from 'node:crypto';
-import { PutCartPayload } from 'src/order/type';
 import { InjectRepository } from '@nestjs/typeorm';
-import { CartItem } from '../entities/cart-item.entity';
 import { Repository } from 'typeorm';
+import { PutCartPayload } from 'src/order/type';
 import { Cart, CartStatus } from '../entities/cart.entity';
+import { CartItem } from '../entities/cart-item.entity';
 
 @Injectable()
 export class CartService {
   constructor(
-    @InjectRepository(Cart) private cartsRepository: Repository<Cart>,
+    @InjectRepository(Cart)
+    private cartRepository: Repository<Cart>,
     @InjectRepository(CartItem)
-    private cartItemsRepository: Repository<CartItem>,
+    private cartItemRepository: Repository<CartItem>,
   ) {}
 
-  async findByUserId(userId: string): Promise<Cart> {
-    return await this.cartsRepository.findOne({
-      where: { user_id: userId },
+  async findByUserId(userId: string): Promise<Cart | null> {
+    return this.cartRepository.findOne({
+      where: { userId },
       relations: ['items'],
+      order: {
+        items: {
+          created_at: 'DESC',
+        },
+      },
     });
   }
 
-  async createByUserId(user_id: string): Promise<Cart> {
-    const createdCart = this.cartsRepository.create({
-      id: randomUUID(),
-      user_id,
+  async createByUserId(userId: string): Promise<Cart> {
+    const cart = this.cartRepository.create({
+      userId,
       status: CartStatus.OPEN,
       items: [],
     });
 
-    return await this.cartsRepository.save(createdCart);
+    return this.cartRepository.save(cart);
   }
 
   async findOrCreateByUserId(userId: string): Promise<Cart> {
@@ -39,38 +43,53 @@ export class CartService {
       return userCart;
     }
 
-    return await this.createByUserId(userId);
+    return this.createByUserId(userId);
   }
 
   async updateByUserId(userId: string, payload: PutCartPayload): Promise<Cart> {
     const userCart = await this.findOrCreateByUserId(userId);
 
-    const index = (userCart.items || []).findIndex(
-      (cartItem) => cartItem.product_id === payload.product.id,
+    // Find existing cart item with the same product
+    const existingCartItem = userCart.items.find(
+      (item) => item.productId === payload.product.id,
     );
 
-    if (index === -1) {
-      const newCartItem = this.cartItemsRepository.create({
-        product_id: payload.product.id,
+    if (existingCartItem) {
+      if (payload.count === 0) {
+        // Remove the item
+        await this.cartItemRepository.remove(existingCartItem);
+        userCart.items = userCart.items.filter(
+          (item) => item.id !== existingCartItem.id,
+        );
+      } else {
+        // Update the count
+        existingCartItem.count = payload.count;
+        await this.cartItemRepository.save(existingCartItem);
+      }
+    } else if (payload.count > 0) {
+      // Add new item
+      const newCartItem = this.cartItemRepository.create({
+        cartId: userCart.id,
+        productId: payload.product.id,
         count: payload.count,
         cart: userCart,
       });
-      await this.cartItemsRepository.save(newCartItem);
-    } else if (payload.count === 0) {
-      await this.cartItemsRepository.delete({
-        product_id: payload.product.id,
-      });
-    } else {
-      await this.cartItemsRepository.update(
-        { product_id: payload.product.id },
-        { count: payload.count },
-      );
+
+      const savedCartItem = await this.cartItemRepository.save(newCartItem);
+      userCart.items.push(savedCartItem);
     }
 
     return userCart;
   }
 
-  removeByUserId(userId): void {
-    this.cartsRepository.delete({ user_id: userId });
+  async removeByUserId(userId: string): Promise<void> {
+    const userCart = await this.findByUserId(userId);
+
+    if (userCart) {
+      // Remove all cart items first (should cascade automatically, but being explicit)
+      await this.cartItemRepository.remove(userCart.items);
+      // Remove the cart
+      await this.cartRepository.remove(userCart);
+    }
   }
 }
